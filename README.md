@@ -7,7 +7,8 @@
 ## Setup
 
 Follow the steps on https://developers.google.com/drive/v3/web/quickstart/go 
-to get the `client_secret.json` file
+to get the `client_secret.json` file. It will be loaded from the current
+working directory.
 
 ## Usage
 
