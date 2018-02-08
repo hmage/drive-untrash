@@ -25,19 +25,6 @@ var (
 	flagVerbose = flag.Bool("v", false, "verbose logging")
 )
 
-func getRoot(srv *drive.Service) (string, error) {
-	var root *drive.File
-	err := p.Call(func() (bool, error) {
-		var err error
-		root, err = srv.Files.Get("root").Fields("id").Do()
-		return shouldRetry(err)
-	})
-	if err != nil {
-		return "", err
-	}
-	return root.Id, nil
-}
-
 func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, recurse bool) {
 	if *flagVerbose {
 		log.Println("restore trash in", parent)
@@ -201,7 +188,7 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 // tokenCacheFile generates credential file path/filename.
 // It returns the generated credential path/filename.
 func tokenCacheFile() (string, error) {
-	return url.QueryEscape("sheets.googleapis.com-go-quickstart.json"), nil
+	return url.QueryEscape("drive-go-quickstart.json"), nil
 }
 
 // tokenFromFile retrieves a Token from a given file path.
@@ -237,8 +224,6 @@ func main() {
 	p.SetMaxConnections(10)
 	ctx := context.Background()
 
-	flagRoot := flag.String("root", "", "root folder to recurse into")
-
 	flag.Parse()
 
 	b, err := ioutil.ReadFile("client_secret.json")
@@ -268,18 +253,10 @@ func main() {
 			}
 		}
 	} else {
-		if *flagRoot == "" {
-			var err error
-			*flagRoot, err = getRoot(srv)
-			if err != nil {
-				log.Fatalf("Unable to retrieve root folder %v", err)
-			}
-			log.Println("got drive root", *flagRoot)
-		}
 		files, err := listDrive(srv)
 		if err != nil {
 			log.Fatalf("Unable to list drive: %v", err)
 		}
-		restoreTrashed(srv, *flagRoot, files, true)
+		restoreTrashed(srv, "root", files, true)
 	}
 }
