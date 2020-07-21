@@ -27,7 +27,11 @@ var (
 
 func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, recurse bool) {
 	if *flagVerbose {
-		log.Println("restore trash in", parent)
+		if parent == "" {
+			log.Println("restoring trash in root")
+		} else {
+			log.Println("restoring trash in", parent)
+		}
 	}
 	for _, child := range childs {
 		if child.ExplicitlyTrashed {
@@ -47,12 +51,11 @@ func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, rec
 		}
 
 		if recurse && child.MimeType == "application/vnd.google-apps.folder" {
-			dchilds, err := listFolder(srv, child.Id)
+			err := processFolder(srv, child.Id)
 			if err != nil {
 				log.Println("unable to list", child.Name, err)
 				continue
 			}
-			restoreTrashed(srv, child.Id, dchilds, recurse)
 		}
 	}
 }
@@ -97,25 +100,24 @@ func getFolderPage(srv *drive.Service, folderId string, pageToken string) ([]*dr
 
 	return fl.Files, fl.NextPageToken, nil
 }
-func listFolder(srv *drive.Service, folderId string) ([]*drive.File, error) {
-	var files []*drive.File
+func processFolder(srv *drive.Service, folderId string) error {
 	var pageToken string
 	for {
-		var f []*drive.File
+		var files []*drive.File
 		var err error
-		f, pageToken, err = getFolderPage(srv, folderId, pageToken)
+		files, pageToken, err = getFolderPage(srv, folderId, pageToken)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to get file listing: %w", err)
+			return fmt.Errorf("Failed to get file listing: %w", err)
 		}
-		files = append(files, f...)
 		if *flagVerbose {
-			log.Println("got page with", len(f), "entries. file count is", len(files))
+			log.Println("got page with", len(files), "entries")
 		}
+		restoreTrashed(srv, folderId, files, true)
 		if pageToken == "" {
 			break
 		}
 	}
-	return files, nil
+	return nil
 }
 
 // getClient uses a Context and Config to retrieve a Token
@@ -216,18 +218,15 @@ func main() {
 
 	if args := flag.Args(); len(args) > 0 {
 		for _, folderId := range args {
-			files, err := listFolder(srv, folderId)
+			err := processFolder(srv, folderId)
 			if err != nil {
 				log.Printf("Unable to list folder %q: %v", folderId, err)
-			} else {
-				restoreTrashed(srv, folderId, files, true)
 			}
 		}
 	} else {
-		files, err := listFolder(srv, "")
+		err := processFolder(srv, "")
 		if err != nil {
 			log.Fatalf("Unable to list drive: %v", err)
 		}
-		restoreTrashed(srv, "root", files, true)
 	}
 }
