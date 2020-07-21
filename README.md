@@ -2,7 +2,7 @@
 
 ## Install
 
-`go get -u gitlab.com/B4dM4n/drive-untrash`
+`go get -u github.com/hmage/drive-untrash`
 
 ## Setup
 

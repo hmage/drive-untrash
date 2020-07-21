@@ -1,4 +1,4 @@
-module gitlab.com/B4dM4n/drive-untrash
+module github.com/hmage/drive-untrash
 
 go 1.14
 
