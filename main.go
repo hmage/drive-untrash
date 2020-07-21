@@ -13,8 +13,8 @@ import (
 	drive "google.golang.org/api/drive/v3"
 	"google.golang.org/api/googleapi"
 
-	"github.com/ncw/rclone/fs"
-	"github.com/ncw/rclone/pacer"
+	"github.com/rclone/rclone/fs"
+	"github.com/rclone/rclone/lib/pacer"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -219,7 +219,7 @@ func saveToken(file string, token *oauth2.Token) {
 func main() {
 	fs.Config.LogLevel = fs.LogLevelDebug
 	p = pacer.New()
-	p.SetPacer(pacer.GoogleDrivePacer)
+	p.SetCalculator(pacer.NewGoogleDrive())
 	p.SetRetries(5)
 	p.SetMaxConnections(10)
 	ctx := context.Background()
