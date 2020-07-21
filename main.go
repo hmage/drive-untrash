@@ -178,7 +178,7 @@ func getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
 		log.Fatalf("Unable to read authorization code %v", err)
 	}
 
-	tok, err := config.Exchange(oauth2.NoContext, code)
+	tok, err := config.Exchange(context.Background(), code)
 	if err != nil {
 		log.Fatalf("Unable to retrieve token from web %v", err)
 	}
@@ -208,12 +208,16 @@ func tokenFromFile(file string) (*oauth2.Token, error) {
 // token in it.
 func saveToken(file string, token *oauth2.Token) {
 	fmt.Printf("Saving credential file to: %s\n", file)
-	f, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+
+	data, err := json.Marshal(token)
+	if err != nil {
+		log.Fatalf("Failed to marshal token into json: %s", err)
+	}
+
+	err = ioutil.WriteFile(file, data, 0600)
 	if err != nil {
 		log.Fatalf("Unable to cache oauth token: %v", err)
 	}
-	defer f.Close()
-	json.NewEncoder(f).Encode(token)
 }
 
 func main() {
