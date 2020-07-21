@@ -79,7 +79,12 @@ func getFolderPage(srv *drive.Service, folderId string, pageToken string) ([]*dr
 		err error
 	)
 	err = p.Call(func() (bool, error) {
-		call := srv.Files.List().PageSize(1000).Fields("nextPageToken", "files(id, name, mimeType, explicitlyTrashed)").Q(fmt.Sprintf("'%s' in parents and (mimeType = 'application/vnd.google-apps.folder' or trashed = true)", folderId))
+		call := srv.Files.List().PageSize(1000).Fields("nextPageToken", "files(id, name, mimeType, explicitlyTrashed)")
+		if folderId != "" {
+			call.Q(fmt.Sprintf("'%s' in parents and (mimeType = 'application/vnd.google-apps.folder' or trashed = true)", folderId))
+		} else {
+			call.Q("mimeType = 'application/vnd.google-apps.folder' or trashed = true")
+		}
 		if pageToken != "" {
 			call.PageToken(pageToken)
 		}
@@ -93,62 +98,24 @@ func getFolderPage(srv *drive.Service, folderId string, pageToken string) ([]*dr
 	return fl.Files, fl.NextPageToken, nil
 }
 func listFolder(srv *drive.Service, folderId string) ([]*drive.File, error) {
-	files, pageToken, err := getFolderPage(srv, folderId, "")
-	if err != nil {
-		return nil, err
-	}
-	if *flagVerbose {
-		log.Println("got page with", len(files), "entries")
-	}
-	for pageToken != "" && err == nil {
+	var files []*drive.File
+	var pageToken string
+	for {
 		var f []*drive.File
+		var err error
 		f, pageToken, err = getFolderPage(srv, folderId, pageToken)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to get file listing: %w", err)
+		}
 		files = append(files, f...)
 		if *flagVerbose {
 			log.Println("got page with", len(f), "entries. file count is", len(files))
 		}
-	}
-	return files, err
-}
-
-func getPage(srv *drive.Service, pageToken string) ([]*drive.File, string, error) {
-	var (
-		fl  *drive.FileList
-		err error
-	)
-	err = p.Call(func() (bool, error) {
-		call := srv.Files.List().PageSize(1000).Fields("nextPageToken", "files(id, name, mimeType, explicitlyTrashed)").Q("mimeType = 'application/vnd.google-apps.folder' or trashed = true")
-		if pageToken != "" {
-			call.PageToken(pageToken)
-		}
-		fl, err = call.Do()
-		return shouldRetry(err)
-	})
-	if err != nil {
-		return nil, "", fmt.Errorf("Unable to retrieve files: %v", err)
-	}
-	//log.Println("getPage", fl, err)
-
-	return fl.Files, fl.NextPageToken, nil
-}
-func listDrive(srv *drive.Service) ([]*drive.File, error) {
-	files, pageToken, err := getPage(srv, "")
-	if err != nil {
-		return nil, err
-	}
-	if *flagVerbose {
-		log.Println("got page with", len(files), "entries")
-	}
-
-	for pageToken != "" && err == nil {
-		var f []*drive.File
-		f, pageToken, err = getPage(srv, pageToken)
-		files = append(files, f...)
-		if *flagVerbose {
-			log.Println("got page with", len(f), "entries. file count is", len(files))
+		if pageToken == "" {
+			break
 		}
 	}
-	return files, err
+	return files, nil
 }
 
 // getClient uses a Context and Config to retrieve a Token
@@ -257,7 +224,7 @@ func main() {
 			}
 		}
 	} else {
-		files, err := listDrive(srv)
+		files, err := listFolder(srv, "")
 		if err != nil {
 			log.Fatalf("Unable to list drive: %v", err)
 		}
