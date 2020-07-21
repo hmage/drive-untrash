@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 
 	drive "google.golang.org/api/drive/v3"
 	"google.golang.org/api/googleapi"
@@ -25,18 +26,18 @@ var (
 	flagVerbose = flag.Bool("v", false, "verbose logging")
 )
 
-func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, recurse bool) {
+func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, recurse bool, wg *sync.WaitGroup) {
+	// parent is only for logging purposes
+	if parent == "" {
+		parent = "root"
+	}
 	if *flagVerbose {
-		if parent == "" {
-			log.Println("restoring trash in root")
-		} else {
-			log.Println("restoring trash in", parent)
-		}
+		log.Println("restoring trash in", parent)
 	}
 	for _, child := range childs {
 		if child.ExplicitlyTrashed {
 			if *flagVerbose {
-				log.Println("restore", child.Id, child.Name, child.MimeType)
+				log.Printf("Restoring file %v %v in folder %v", child.Id, child.Name, parent)
 			}
 			update := drive.File{
 				Trashed: false,
@@ -46,12 +47,12 @@ func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, rec
 				return shouldRetry(err)
 			})
 			if err != nil {
-				log.Println("unable restore trash", child.Id, child.Name, err)
+				log.Printf("Failed to restore file %v %v in folder %v: %s", child.Id, child.Name, parent, err)
 			}
 		}
 
 		if recurse && child.MimeType == "application/vnd.google-apps.folder" {
-			err := processFolder(srv, child.Id)
+			err := processFolder(srv, child.Id, wg)
 			if err != nil {
 				log.Println("unable to list", child.Name, err)
 				continue
@@ -100,7 +101,7 @@ func getFolderPage(srv *drive.Service, folderId string, pageToken string) ([]*dr
 
 	return fl.Files, fl.NextPageToken, nil
 }
-func processFolder(srv *drive.Service, folderId string) error {
+func processFolder(srv *drive.Service, folderId string, wg *sync.WaitGroup) error {
 	var pageToken string
 	for {
 		var files []*drive.File
@@ -112,7 +113,12 @@ func processFolder(srv *drive.Service, folderId string) error {
 		if *flagVerbose {
 			log.Println("got page with", len(files), "entries")
 		}
-		restoreTrashed(srv, folderId, files, true)
+		wg.Add(1)
+		go func(srv *drive.Service, folderId string, files []*drive.File, wg *sync.WaitGroup) {
+			restoreTrashed(srv, folderId, files, true, wg)
+			wg.Done()
+		}(srv, folderId, files, wg)
+		// end of listing, that was last page
 		if pageToken == "" {
 			break
 		}
@@ -216,17 +222,22 @@ func main() {
 		log.Fatalf("Unable to retrieve drive Client %v", err)
 	}
 
+	wg := sync.WaitGroup{}
+
 	if args := flag.Args(); len(args) > 0 {
 		for _, folderId := range args {
-			err := processFolder(srv, folderId)
+			err := processFolder(srv, folderId, &wg)
 			if err != nil {
 				log.Printf("Unable to list folder %q: %v", folderId, err)
 			}
 		}
 	} else {
-		err := processFolder(srv, "")
+		err := processFolder(srv, "", &wg)
 		if err != nil {
 			log.Fatalf("Unable to list drive: %v", err)
 		}
 	}
+
+	log.Printf("Waiting for goroutines to finish...")
+	wg.Wait()
 }
