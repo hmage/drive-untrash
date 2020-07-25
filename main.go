@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
 	"sync"
@@ -196,6 +197,9 @@ func saveToken(file string, token *oauth2.Token) {
 }
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	fs.Config.LogLevel = fs.LogLevelDebug
 	p = pacer.New()
 	p.SetCalculator(pacer.NewGoogleDrive())
