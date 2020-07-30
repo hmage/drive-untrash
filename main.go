@@ -210,9 +210,9 @@ func main() {
 	}()
 	fs.Config.LogLevel = fs.LogLevelDebug
 	p = pacer.New()
-	p.SetCalculator(pacer.NewGoogleDrive())
-	p.SetRetries(5)
-	p.SetMaxConnections(10)
+	p.SetCalculator(pacer.NewDefault())
+	p.SetRetries(50)
+	p.SetMaxConnections(100)
 	ctx := context.Background()
 
 	flag.Parse()
