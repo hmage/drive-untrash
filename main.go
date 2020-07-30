@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	drive "google.golang.org/api/drive/v3"
 	"google.golang.org/api/googleapi"
@@ -23,8 +24,9 @@ import (
 )
 
 var (
-	p           *pacer.Pacer
-	flagVerbose = flag.Bool("v", false, "verbose logging")
+	p             *pacer.Pacer
+	flagVerbose   = flag.Bool("v", false, "verbose logging")
+	countRestored uint64
 )
 
 func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, recurse bool, wg *sync.WaitGroup) {
@@ -37,19 +39,25 @@ func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, rec
 	}
 	for _, child := range childs {
 		if child.ExplicitlyTrashed {
-			if *flagVerbose {
-				log.Printf("Restoring file %v %v in folder %v", child.Id, child.Name, parent)
-			}
-			update := drive.File{
-				Trashed: false,
-			}
-			err := p.Call(func() (bool, error) {
-				_, err := srv.Files.Update(child.Id, &update).Do()
-				return shouldRetry(err)
-			})
-			if err != nil {
-				log.Printf("Failed to restore file %v %v in folder %v: %s", child.Id, child.Name, parent, err)
-			}
+			wg.Add(1)
+			go func(child *drive.File) {
+				update := drive.File{
+					Trashed: false,
+				}
+				err := p.Call(func() (bool, error) {
+					_, err := srv.Files.Update(child.Id, &update).Do()
+					return shouldRetry(err)
+				})
+				if err != nil {
+					log.Printf("Failed to restore file %v %v in folder %v: %s", child.Id, child.Name, parent, err)
+				} else {
+					if *flagVerbose {
+						log.Printf("Restored file %v %v in folder %v", child.Id, child.Name, parent)
+					}
+					atomic.AddUint64(&countRestored, 1)
+				}
+				wg.Done()
+			}(child)
 		}
 
 		if recurse && child.MimeType == "application/vnd.google-apps.folder" {
@@ -244,4 +252,5 @@ func main() {
 
 	log.Printf("Waiting for goroutines to finish...")
 	wg.Wait()
+	log.Printf("Restored %d files in total", countRestored)
 }
