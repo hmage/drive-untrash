@@ -118,6 +118,12 @@ func processFolder(srv *drive.Service, folderId string, folderTitle string) erro
 	count := seen[folderId]
 	seen[folderId]++
 	seenMutex.Unlock()
+	if count > 0 {
+		if verbose {
+			log.Printf("Not processing folder ID \"%s\", already seen %d times, with name \"%s\"", folderId, count, folderTitle)
+		}
+		return nil
+	}
 	atomic.AddUint64(&countFolders, 1)
 	if verbose {
 		log.Printf("Processing folder ID \"%s\", seen %d times, with name \"%s\"", folderId, count, folderTitle)
