@@ -27,15 +27,14 @@ var (
 	p             *pacer.Pacer
 	verbose       bool
 	countRestored uint64
+	countFolders  uint64
+	wg            sync.WaitGroup
 )
 
-func restoreTrashed(srv *drive.Service, folderID string, childs []*drive.File, recurse bool, wg *sync.WaitGroup) {
+func restoreTrashed(srv *drive.Service, folderID string, childs []*drive.File, recurse bool) {
 	// parent is only for logging purposes
 	if folderID == "" {
 		folderID = "root"
-	}
-	if verbose {
-		log.Println("Processing folder", folderID)
 	}
 	for _, child := range childs {
 		if child.ExplicitlyTrashed {
@@ -61,7 +60,7 @@ func restoreTrashed(srv *drive.Service, folderID string, childs []*drive.File, r
 		}
 
 		if recurse && child.MimeType == "application/vnd.google-apps.folder" {
-			err := processFolder(srv, child.Id, wg)
+			err := processFolder(srv, child.Id, child.Title)
 			if err != nil {
 				log.Println("unable to list", child.Title, err)
 				continue
@@ -110,7 +109,19 @@ func getFolderPage(srv *drive.Service, folderId string, pageToken string) ([]*dr
 
 	return fl.Items, fl.NextPageToken, nil
 }
-func processFolder(srv *drive.Service, folderId string, wg *sync.WaitGroup) error {
+
+var seen = map[string]int{}
+var seenMutex sync.Mutex
+
+func processFolder(srv *drive.Service, folderId string, folderTitle string) error {
+	seenMutex.Lock()
+	count := seen[folderId]
+	seen[folderId]++
+	seenMutex.Unlock()
+	atomic.AddUint64(&countFolders, 1)
+	if verbose {
+		log.Printf("Processing folder ID \"%s\", seen %d times, with name \"%s\"", folderId, count, folderTitle)
+	}
 	var pageToken string
 	for {
 		var files []*drive.File
@@ -120,10 +131,10 @@ func processFolder(srv *drive.Service, folderId string, wg *sync.WaitGroup) erro
 			return fmt.Errorf("Failed to get file listing: %w", err)
 		}
 		wg.Add(1)
-		go func(srv *drive.Service, folderId string, files []*drive.File, wg *sync.WaitGroup) {
-			restoreTrashed(srv, folderId, files, true, wg)
+		go func(srv *drive.Service, folderId string, files []*drive.File) {
+			restoreTrashed(srv, folderId, files, true)
 			wg.Done()
-		}(srv, folderId, files, wg)
+		}(srv, folderId, files)
 		// end of listing, that was last page
 		if pageToken == "" {
 			break
@@ -232,17 +243,15 @@ func main() {
 		log.Fatalf("Unable to retrieve drive Client %v", err)
 	}
 
-	wg := sync.WaitGroup{}
-
 	if args := flag.Args(); len(args) > 0 {
 		for _, folderId := range args {
-			err := processFolder(srv, folderId, &wg)
+			err := processFolder(srv, folderId, "")
 			if err != nil {
 				log.Printf("Unable to list folder %q: %v", folderId, err)
 			}
 		}
 	} else {
-		err := processFolder(srv, "", &wg)
+		err := processFolder(srv, "", "/")
 		if err != nil {
 			log.Fatalf("Unable to list drive: %v", err)
 		}
@@ -250,5 +259,6 @@ func main() {
 
 	log.Printf("Waiting for goroutines to finish...")
 	wg.Wait()
+	log.Printf("Processed %d folders in total", countFolders)
 	log.Printf("Restored %d files in total", countRestored)
 }
