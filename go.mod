@@ -1,10 +1,10 @@
 module github.com/hmage/drive-untrash
 
-go 1.14
+go 1.15
 
 require (
-	github.com/rclone/rclone v1.52.2
-	golang.org/x/net v0.0.0-20200707034311-ab3426394381
+	github.com/rclone/rclone v1.52.3
+	golang.org/x/net v0.0.0-20200813134508-3edf25e44fcc
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	google.golang.org/api v0.29.0
+	google.golang.org/api v0.30.0
 )
