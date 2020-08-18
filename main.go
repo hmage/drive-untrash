@@ -13,7 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	drive "google.golang.org/api/drive/v3"
+	drive "google.golang.org/api/drive/v2"
 	"google.golang.org/api/googleapi"
 
 	"github.com/rclone/rclone/fs"
@@ -41,18 +41,15 @@ func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, rec
 		if child.ExplicitlyTrashed {
 			wg.Add(1)
 			go func(child *drive.File) {
-				update := drive.File{
-					Trashed: false,
-				}
 				err := p.Call(func() (bool, error) {
-					_, err := srv.Files.Update(child.Id, &update).Do()
+					_, err := srv.Files.Untrash(child.Id).Do()
 					return shouldRetry(err)
 				})
 				if err != nil {
-					log.Printf("Failed to restore file %v %v in folder %v: %s", child.Id, child.Name, parent, err)
+					log.Printf("Failed to restore file %v %v in folder %v: %s", child.Id, child.Title, parent, err)
 				} else {
 					if *flagVerbose {
-						log.Printf("Restored file %v %v in folder %v", child.Id, child.Name, parent)
+						log.Printf("Restored file %v %v in folder %v", child.Id, child.Title, parent)
 					}
 					atomic.AddUint64(&countRestored, 1)
 				}
@@ -63,7 +60,7 @@ func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, rec
 		if recurse && child.MimeType == "application/vnd.google-apps.folder" {
 			err := processFolder(srv, child.Id, wg)
 			if err != nil {
-				log.Println("unable to list", child.Name, err)
+				log.Println("unable to list", child.Title, err)
 				continue
 			}
 		}
@@ -92,7 +89,7 @@ func getFolderPage(srv *drive.Service, folderId string, pageToken string) ([]*dr
 		err error
 	)
 	err = p.Call(func() (bool, error) {
-		call := srv.Files.List().PageSize(1000).Fields("nextPageToken", "files(id, name, mimeType, explicitlyTrashed)")
+		call := srv.Files.List().MaxResults(1000).Fields("nextPageToken", "items(id, title, mimeType, explicitlyTrashed)")
 		if folderId != "" {
 			call.Q(fmt.Sprintf("'%s' in parents and (mimeType = 'application/vnd.google-apps.folder' or trashed = true)", folderId))
 		} else {
@@ -108,7 +105,7 @@ func getFolderPage(srv *drive.Service, folderId string, pageToken string) ([]*dr
 		return nil, "", fmt.Errorf("Unable to retrieve files: %v", err)
 	}
 
-	return fl.Files, fl.NextPageToken, nil
+	return fl.Items, fl.NextPageToken, nil
 }
 func processFolder(srv *drive.Service, folderId string, wg *sync.WaitGroup) error {
 	var pageToken string
