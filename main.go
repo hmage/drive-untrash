@@ -25,36 +25,39 @@ import (
 
 var (
 	p             *pacer.Pacer
-	flagVerbose   = flag.Bool("v", false, "verbose logging")
+	verbose       bool
 	countRestored uint64
 )
 
-func restoreTrashed(srv *drive.Service, parent string, childs []*drive.File, recurse bool, wg *sync.WaitGroup) {
+func restoreTrashed(srv *drive.Service, folderID string, childs []*drive.File, recurse bool, wg *sync.WaitGroup) {
 	// parent is only for logging purposes
-	if parent == "" {
-		parent = "root"
+	if folderID == "" {
+		folderID = "root"
 	}
-	if *flagVerbose {
-		log.Println("restoring trash in", parent)
+	if verbose {
+		log.Println("Processing folder", folderID)
 	}
 	for _, child := range childs {
 		if child.ExplicitlyTrashed {
 			wg.Add(1)
-			go func(child *drive.File) {
+			go func(child *drive.File, folderID string) {
+				if verbose {
+					log.Printf("Restoring %v %v in folder %v", child.Id, child.Title, folderID)
+				}
 				err := p.Call(func() (bool, error) {
 					_, err := srv.Files.Untrash(child.Id).Do()
 					return shouldRetry(err)
 				})
 				if err != nil {
-					log.Printf("Failed to restore file %v %v in folder %v: %s", child.Id, child.Title, parent, err)
+					log.Printf("Failed to restore file %v %v in folder %v: %s", child.Id, child.Title, folderID, err)
 				} else {
-					if *flagVerbose {
-						log.Printf("Restored file %v %v in folder %v", child.Id, child.Title, parent)
+					if verbose {
+						log.Printf("Restored %v %v in folder %v", child.Id, child.Title, folderID)
 					}
 					atomic.AddUint64(&countRestored, 1)
 				}
 				wg.Done()
-			}(child)
+			}(child, folderID)
 		}
 
 		if recurse && child.MimeType == "application/vnd.google-apps.folder" {
@@ -115,9 +118,6 @@ func processFolder(srv *drive.Service, folderId string, wg *sync.WaitGroup) erro
 		files, pageToken, err = getFolderPage(srv, folderId, pageToken)
 		if err != nil {
 			return fmt.Errorf("Failed to get file listing: %w", err)
-		}
-		if *flagVerbose {
-			log.Println("got page with", len(files), "entries")
 		}
 		wg.Add(1)
 		go func(srv *drive.Service, folderId string, files []*drive.File, wg *sync.WaitGroup) {
@@ -212,6 +212,7 @@ func main() {
 	p.SetMaxConnections(100)
 	ctx := context.Background()
 
+	flag.BoolVar(&verbose, "v", false, "verbose logging")
 	flag.Parse()
 
 	b, err := ioutil.ReadFile("client_secret.json")
